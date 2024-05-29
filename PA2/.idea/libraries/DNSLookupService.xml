@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="DNSLookupService">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/DNSLookupService/out/artifacts/DNSLookupService_jar/DNSLookupService.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
