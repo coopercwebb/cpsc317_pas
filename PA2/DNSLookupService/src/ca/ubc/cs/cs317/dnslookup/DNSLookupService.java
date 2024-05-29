@@ -107,23 +107,37 @@ public class DNSLookupService {
     // copy the question with CNAME instead of requested type
     DNSQuestion question_CNAME = new DNSQuestion(question.getHostName(), RecordType.CNAME, question.getRecordClass());
 
-    Set<ResourceRecord> crr_result = null;
+    Set<ResourceRecord> ind_query_res = null;
     while (!containsAnswer(cache.getCachedResults(question), question) && !containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
-      List<CommonResourceRecord> crr = cache.getBestNameservers(question);
-      List<CommonResourceRecord> test = cache.filterByKnownIPAddress(crr);
+      List<CommonResourceRecord> best_nameservers = cache.getBestNameservers(question);
+      List<CommonResourceRecord> best_nameservers_w_ip = cache.filterByKnownIPAddress(best_nameservers);
       boolean found_res = false;
 
-      for (CommonResourceRecord record : test) {
-        crr_result = individualQueryProcess(question, record.getInetResult());
-        if (crr_result != null) {
-          // Valid crr_result, probe cache for results
+      if (best_nameservers_w_ip.size() == 0) {
+        // If no ip addresses are known for the nameservers, resolve a dns server's A record
+        for (CommonResourceRecord ns : best_nameservers) {
+          // Create a new iterative query with the dns server host name
+          // If a result is returned, the ip address is now in the cache
+          if (iterativeQuery(new DNSQuestion(ns.getTextResult(), RecordType.A, RecordClass.IN)).size() > 0) {
+            found_res = true;
+            break;
+          }
+        }
+      }
+
+      for (CommonResourceRecord record : best_nameservers_w_ip) {
+        ind_query_res = individualQueryProcess(question, record.getInetResult());
+        if (ind_query_res != null) {
+          // Valid ind_query_res, probe cache for results
           found_res = true;
           break;
         }
 
 
       }
+
       if (!found_res) {
+        // No valid nameservers to query or no individual query result
         break;
       }
     }
