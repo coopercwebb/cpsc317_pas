@@ -104,17 +104,16 @@ public class DNSLookupService {
     Set<CommonResourceRecord> ans = new HashSet<>();
     /* TODO: To be implemented by the student */
 
-    // copy the question with CNAME instead of requested type
+    // copy the question with CNAME instead of requested type, for exiting control flow when CNAME record found
     DNSQuestion question_CNAME = new DNSQuestion(question.getHostName(), RecordType.CNAME, question.getRecordClass());
 
-    Set<ResourceRecord> ind_query_res = null;
     while (!containsAnswer(cache.getCachedResults(question), question) && !containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
       List<CommonResourceRecord> best_nameservers = cache.getBestNameservers(question);
       List<CommonResourceRecord> best_nameservers_w_ip = cache.filterByKnownIPAddress(best_nameservers);
       boolean found_res = false;
 
       if (best_nameservers_w_ip.size() == 0) {
-        // If no ip addresses are known for the nameservers, resolve a dns server's A record
+        // If no ip addresses are known for the nameservers, resolve a nameservers A record
         for (CommonResourceRecord ns : best_nameservers) {
           // Create a new iterative query with the dns server host name
           // If a result is returned, the ip address is now in the cache
@@ -126,7 +125,7 @@ public class DNSLookupService {
       }
 
       for (CommonResourceRecord record : best_nameservers_w_ip) {
-        ind_query_res = individualQueryProcess(question, record.getInetResult());
+        Set<ResourceRecord> ind_query_res = individualQueryProcess(question, record.getInetResult());
         if (ind_query_res != null) {
           // Valid ind_query_res, probe cache for results
           found_res = true;
@@ -142,12 +141,20 @@ public class DNSLookupService {
       }
     }
 
-    // Contains CNAME answer, recursive call on CNAME resolution
+
+    boolean resolved = false;
     if (!containsAnswer(cache.getCachedResults(question), question) && containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
+      // Contains CNAME answer, recursive call for CNAME resolution
       for (CommonResourceRecord curRec : cache.getCachedResults(question_CNAME)) {
         ans.add(curRec);
-        DNSQuestion recursive_CNAME = new DNSQuestion(curRec.getTextResult(), question.getRecordType(), question.getRecordClass());
-        ans.addAll(iterativeQuery(recursive_CNAME));
+        if (!resolved) {
+          DNSQuestion recursive_CNAME = new DNSQuestion(curRec.getTextResult(), question.getRecordType(), question.getRecordClass());
+          Collection<CommonResourceRecord> cname_ans = iterativeQuery(recursive_CNAME);
+          if (cname_ans.size() > 0) {
+            resolved = true;
+            ans.addAll(cname_ans);
+          }
+        }
       }
     }
 
@@ -185,33 +192,36 @@ public class DNSLookupService {
 
     DNSMessage message = buildQuery(question);
 
-    byte[] buf = message.getUsed();
-
+    byte[] sendbuf = message.getUsed();
     byte[] recvbuf = new byte[MAX_DNS_MESSAGE_LENGTH];
-    DatagramPacket sent_packet = new DatagramPacket(buf, buf.length, server, 53);
+    DatagramPacket sent_packet = new DatagramPacket(sendbuf, sendbuf.length, server, 53);
     DatagramPacket received_packet = new DatagramPacket(recvbuf, recvbuf.length);
 
-
     verbose.printQueryToSend("UDP", question, server, message.getID());
+
+    DNSMessage received_message = null;
 
     boolean received = false;
     for (int attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
       try {
         socket.send(sent_packet);
         socket.receive(received_packet);
-        received = true;
-        break;
+        received_message = new DNSMessage(received_packet.getData(), received_packet.getLength());
+        if (received_message.getID() != message.getID()) {
+          // Ignore responses to different queries, and retry
+        } else {
+          received = true;
+          break;
+        }
       } catch (IOException e) {
           // Retry
       }
     }
 
     if (!received) {
-      // Could not connect after MAX_QUERY_ATTEMPTS, return null
+      // Could not connect or receive valid message after MAX_QUERY_ATTEMPTS, return null
       return null;
     }
-
-    DNSMessage received_message = new DNSMessage(received_packet.getData(), received_packet.getLength());
 
     // Potentially throws DNSErrorException if RCode is not 0
     return processResponse(received_message);
