@@ -110,19 +110,11 @@ public class DNSLookupService {
     Set<ResourceRecord> crr_result = null;
     while (!containsAnswer(cache.getCachedResults(question), question) && !containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
       List<CommonResourceRecord> crr = cache.getBestNameservers(question);
-      InetAddress res;
+      List<CommonResourceRecord> test = cache.filterByKnownIPAddress(crr);
       boolean found_res = false;
 
-      for (CommonResourceRecord record : crr) {
-        try {
-          res = InetAddress.getByName(record.getTextResult());
-        } catch (UnknownHostException e) {
-//          throw new DNSErrorException(e.toString());
-          // Host error, continue with best nameservers
-          continue;
-        }
-
-        crr_result = individualQueryProcess(question, res);
+      for (CommonResourceRecord record : test) {
+        crr_result = individualQueryProcess(question, record.getInetResult());
         if (crr_result != null) {
           // Valid crr_result, probe cache for results
           found_res = true;
@@ -140,7 +132,8 @@ public class DNSLookupService {
     if (!containsAnswer(cache.getCachedResults(question), question) && containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
       for (CommonResourceRecord curRec : cache.getCachedResults(question_CNAME)) {
         ans.add(curRec);
-        ans.addAll(iterativeQuery(curRec.getQuestion()));
+        DNSQuestion recursive_CNAME = new DNSQuestion(curRec.getTextResult(), question.getRecordType(), question.getRecordClass());
+        ans.addAll(iterativeQuery(recursive_CNAME));
       }
     }
 
