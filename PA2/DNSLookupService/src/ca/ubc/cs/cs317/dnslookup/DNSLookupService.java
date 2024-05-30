@@ -192,8 +192,47 @@ public class DNSLookupService {
 
     DNSMessage message = buildQuery(question);
 
+    DNSMessage received_message = datagramTransaction(question, message, server, MAX_DNS_MESSAGE_LENGTH);
+
+    if (received_message == null) {
+      return null;
+    }
+
+    // Potentially throws DNSErrorException if RCode is not 0
+    Set<ResourceRecord> non_EDNS_Res = processResponse(received_message);
+
+    // EDNS fallback if TC bit is 1
+    if (received_message.getTC()) {
+      DNSMessage EDNS_message = buildQuery(question);
+      ResourceRecord OPT_RR = new OPTResourceRecord(MAX_EDNS_MESSAGE_LENGTH, 0, new byte[0], new DNSQuestion("", RecordType.OPT, RecordClass.IN));
+      EDNS_message.setARCount(1);
+      EDNS_message.addResourceRecord(OPT_RR, "");
+      DNSMessage EDNS_received_message = datagramTransaction(question, EDNS_message, server, MAX_EDNS_MESSAGE_LENGTH);
+      Set<ResourceRecord> EDNS_Res = processResponse(EDNS_received_message);
+      if (EDNS_Res != null) {
+        return EDNS_Res;
+      }
+    }
+
+    return non_EDNS_Res;
+  }
+
+
+  /**
+   * Helper function that strictly handles the datagram transaction of the constructed DNSMessage.
+   *
+   * The method verbose.printQueryToSend() must be called every time a new query message is about to be sent.
+   *
+   * @param question Host name and record type/class to be used for the query.
+   * @param message Constructed DNSMessage to send to server
+   * @param server   Address of the server to be used for the query.
+   * @param message_length   Specified length of the receiving buffer.
+   * @return If no response is received, returns null. Otherwise, returns the received message
+   */
+  public DNSMessage datagramTransaction(DNSQuestion question, DNSMessage message, InetAddress server, int message_length) {
+
     byte[] sendbuf = message.getUsed();
-    byte[] recvbuf = new byte[MAX_DNS_MESSAGE_LENGTH];
+    byte[] recvbuf = new byte[message_length];
     DatagramPacket sent_packet = new DatagramPacket(sendbuf, sendbuf.length, server, 53);
     DatagramPacket received_packet = new DatagramPacket(recvbuf, recvbuf.length);
 
@@ -201,7 +240,6 @@ public class DNSLookupService {
 
     DNSMessage received_message = null;
 
-    boolean received = false;
     for (int attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
       try {
         socket.send(sent_packet);
@@ -210,22 +248,18 @@ public class DNSLookupService {
         if (received_message.getID() != message.getID()) {
           // Ignore responses to different queries, and retry
         } else {
-          received = true;
           break;
         }
       } catch (IOException e) {
-          // Retry
+        // If invalid response, IndexOutOfBounds will be thrown on getID
+        // Retry
       }
     }
 
-    if (!received) {
-      // Could not connect or receive valid message after MAX_QUERY_ATTEMPTS, return null
-      return null;
-    }
-
-    // Potentially throws DNSErrorException if RCode is not 0
-    return processResponse(received_message);
+    return received_message;
   }
+
+
 
   /**
    * Creates a DNSMessage containing a DNS query.
@@ -298,8 +332,12 @@ public class DNSLookupService {
     for (int i = 0; i < message.getARCount(); i++) {
       ResourceRecord curRR = message.getRR();
       verbose.printIndividualResourceRecord(curRR, curRR.getRecordType().getCode(), curRR.getRecordClassCode());
-      cache.addResult((CommonResourceRecord) curRR);
-      result.add(curRR);
+      try {
+        cache.addResult((CommonResourceRecord) curRR);
+        result.add(curRR);
+      } catch (ClassCastException e) {
+        // Ignore root
+      }
     }
 
     return result;
