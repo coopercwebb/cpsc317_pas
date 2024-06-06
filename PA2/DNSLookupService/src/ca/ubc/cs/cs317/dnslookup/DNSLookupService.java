@@ -131,8 +131,6 @@ public class DNSLookupService {
           found_res = true;
           break;
         }
-
-
       }
 
       if (!found_res) {
@@ -140,7 +138,6 @@ public class DNSLookupService {
         break;
       }
     }
-
 
     boolean resolved = false;
     if (!containsAnswer(cache.getCachedResults(question), question) && containsAnswer(cache.getCachedResults(question_CNAME), question_CNAME)) {
@@ -158,13 +155,11 @@ public class DNSLookupService {
       }
     }
 
-
     for (CommonResourceRecord curRec : cache.getCachedResults(question)) {
         if (curRec.getRecordType() == question.getRecordType() && curRec.getQuestion().equals(question)) {
             ans.add(curRec);
         }
     }
-
 
     return ans;
   }
@@ -209,6 +204,7 @@ public class DNSLookupService {
       EDNS_message.addResourceRecord(OPT_RR, "");
       DNSMessage EDNS_received_message = datagramTransaction(question, EDNS_message, server, MAX_EDNS_MESSAGE_LENGTH);
       Set<ResourceRecord> EDNS_Res = processResponse(EDNS_received_message);
+      // If the EDNS response is successfully processed, return these results over DNS response
       if (EDNS_Res != null) {
         return EDNS_Res;
       }
@@ -233,7 +229,7 @@ public class DNSLookupService {
 
     byte[] sendbuf = message.getUsed();
     byte[] recvbuf = new byte[message_length];
-    DatagramPacket sent_packet = new DatagramPacket(sendbuf, sendbuf.length, server, 53);
+    DatagramPacket sent_packet = new DatagramPacket(sendbuf, sendbuf.length, server, DEFAULT_DNS_PORT);
     DatagramPacket received_packet = new DatagramPacket(recvbuf, recvbuf.length);
 
     verbose.printQueryToSend("UDP", question, server, message.getID());
@@ -245,12 +241,11 @@ public class DNSLookupService {
         socket.send(sent_packet);
         socket.receive(received_packet);
         received_message = new DNSMessage(received_packet.getData(), received_packet.getLength());
-        if (received_message.getID() != message.getID()) {
+        if (received_message.getID() == message.getID()) {
           // Ignore responses to different queries, and retry
-        } else {
           break;
         }
-      } catch (IOException e) {
+      } catch (IOException | IndexOutOfBoundsException e) {
         // If invalid response, IndexOutOfBounds will be thrown on getID
         // Retry
       }
