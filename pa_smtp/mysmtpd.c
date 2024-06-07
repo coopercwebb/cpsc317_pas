@@ -128,9 +128,17 @@ int do_mail(smtp_state *ms) {
 int do_rcpt(smtp_state *ms) {
     dlog("Executing rcpt\n");
     // TODO: Implement this function
-    // if (ms->ul) {
-    //     ms->ul = user_list_create();
-    // }
+    int res;
+    if (ms->ul == NULL) {
+        res = checkstate(ms, Receiver_Ready);
+    } else {
+        res = checkstate(ms, Send_Ready);
+    }
+
+    if (res != 0) {
+        return res;
+    }
+
     if (strlen(ms->words[1]) > 3) {
         char *rcpt_name = &ms->words[1][3];
         rcpt_name = trim_angle_brackets(rcpt_name);
@@ -139,6 +147,7 @@ int do_rcpt(smtp_state *ms) {
             if (send_formatted(ms->fd, "250 Requested mail action ok, completed\r\n") <= 0) {
                 return -1;
             }
+            ms->state = Send_Ready;
             return 0;
         }
         if (send_formatted(ms->fd, "550 No such user - %s\r\n", rcpt_name) <= 0) {
@@ -152,8 +161,8 @@ int do_rcpt(smtp_state *ms) {
 int do_data(smtp_state *ms) {
     dlog("Executing data\n");
     // TODO: Implement this function
-    int res = checkstate(ms, Undefined);
-    if (res == 0) {
+    int res = checkstate(ms, Send_Ready);
+    if (res != 0) {
         return res;
     }
     char *tmp_file_name = "tmp_mail";
@@ -162,20 +171,20 @@ int do_data(smtp_state *ms) {
         return -1;
     }
 
-    FILE *fp;
-    fp = fopen(tmp_file_name, "w");
+    char template[] = "./fileXXXXXX";
+    int fd = mkstemp(template);
 
     size_t len;
 
     while ((len = nb_read_line(ms->nb, ms->recvbuf)) >= 0) {
-        if (ms->recvbuf[0] == '.') {
+        if (ms->recvbuf[0] == '.' && ms->recvbuf[1] == '\n') {
             break;
         }
-        fprintf(fp, ms->recvbuf);
+        write(fd, ms->recvbuf, len);
     }
-    fclose(fp);
+    close(fd);
 
-    save_user_mail(tmp_file_name, ms->ul);
+    save_user_mail(template, ms->ul);
 
     if (send_formatted(ms->fd, "250 %s\r\n", "Requested mail action ok, completed") <= 0) {
         return -1;
