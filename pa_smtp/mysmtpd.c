@@ -182,7 +182,10 @@ int do_data(smtp_state *ms) {
     size_t len;
 
     while ((len = nb_read_line(ms->nb, ms->recvbuf)) >= 0) {
-        if (ms->recvbuf[0] == '.' && ms->recvbuf[1] == '\n') {
+        // if (ms->recvbuf[0] == '.' && ms->recvbuf[1] == '\n') {
+        //     break;
+        // }
+        if (memcmp(ms->recvbuf, ".", 1) == 0) {
             break;
         }
         write(fd, ms->recvbuf, len);
