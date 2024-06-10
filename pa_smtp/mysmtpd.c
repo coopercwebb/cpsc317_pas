@@ -14,6 +14,7 @@
 typedef enum state {
     Undefined,
     // TODO: Add additional states as necessary
+    Greeted,
     Receiver_Ready,
     Send_Ready,
 } State;
@@ -87,6 +88,7 @@ int do_helo(smtp_state *ms) {
     if (send_formatted(ms->fd, "250 %s\r\n", ms->my_uname.nodename) <= 0) {
         return -1;
     }
+    ms->state = Greeted;
     return 0;
 }
 
@@ -98,7 +100,7 @@ int do_rset(smtp_state *ms) {
     ms->sender_user = NULL;
     ms->ul = user_list_create();
 
-    ms->state = Undefined;
+    ms->state = Greeted;
 
     if (send_formatted(ms->fd, "250 %s\r\n", "State reset") <= 0) {
         return -1;
@@ -109,6 +111,10 @@ int do_rset(smtp_state *ms) {
 int do_mail(smtp_state *ms) {
     dlog("Executing mail\n");
     // TODO: Implement this function
+    int res = checkstate(ms, Greeted);
+    if (res != 0) {
+        return res;
+    }
     if (ms->sender_user) {
         free(ms->sender_user);
     }
@@ -165,7 +171,6 @@ int do_data(smtp_state *ms) {
     if (res != 0) {
         return res;
     }
-    char *tmp_file_name = "tmp_mail";
 
     if (send_formatted(ms->fd, "354 %s\r\n", "Waiting for data, finish with <CR><LF>.<CR><LF>") <= 0) {
         return -1;
@@ -199,21 +204,22 @@ int do_noop(smtp_state *ms) {
     if (send_formatted(ms->fd, "250 %s\r\n", "OK (noop)") <= 0) {
         return -1;
     }
+    return 0;
 }
 
 int do_vrfy(smtp_state *ms) {
     dlog("Executing vrfy\n");
     // TODO: Implement this function
     if (is_valid_user(ms->words[1], NULL)) {
-        if (send_formatted(ms->fd, "250 User found - %s\r\n", ms->words[1]) > 0) {
-            return 0;
+        if (send_formatted(ms->fd, "250 User found - %s\r\n", ms->words[1]) <= 0) {
+            return -1;
         }
-    } else {
-        if (send_formatted(ms->fd, "550 No such user - %s\r\n", ms->words[1]) > 0) {
-            return 0;
-        }
+        return 0;
     }
-    return 1;
+    if (send_formatted(ms->fd, "550 No such user - %s\r\n", ms->words[1]) <= 0) {
+        return -1;
+    }
+    return 0;
 }
 
 void handle_client(int fd) {
