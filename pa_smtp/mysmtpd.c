@@ -94,6 +94,8 @@ int do_helo(smtp_state *ms) {
 int do_rset(smtp_state *ms) {
     dlog("Executing rset\n");
     // TODO: Implement this function
+
+    // Destruct and re-create the user list
     user_list_destroy(ms->ul);
     ms->ul = user_list_create();
     ms->state = Greeted;
@@ -112,6 +114,8 @@ int do_mail(smtp_state *ms) {
         return res;
     }
 
+    // Ensure that 2 words are present in the buffer and contains
+    // FROM:<...>
     if (ms->nwords == 2 &&
         strlen(ms->words[1]) >= 8 &&
         memcmp(ms->words[1], "FROM:<", 6) == 0 &&
@@ -143,12 +147,17 @@ int do_rcpt(smtp_state *ms) {
         return res;
     }
 
+    // Ensure that 2 words are present in the buffer and contains
+    // TO:<...>
     if (ms->nwords == 2 &&
         strlen(ms->words[1]) >= 6 &&
         memcmp(ms->words[1], "TO:<", 4) == 0 &&
         ms->words[1][strlen(ms->words[1]) - 1] == '>') {
+
         char *rcpt_name = &ms->words[1][3];
         rcpt_name = trim_angle_brackets(rcpt_name);
+
+        // Check if is valid user, add to user list
         if (is_valid_user(rcpt_name, NULL)) {
             user_list_add(&ms->ul, rcpt_name);
             if (send_formatted(ms->fd, "250 Requested mail action ok, completed\r\n") <= 0) {
@@ -157,6 +166,7 @@ int do_rcpt(smtp_state *ms) {
             ms->state = Send_Ready;
             return 0;
         }
+        // User not present in users.txt
         if (send_formatted(ms->fd, "550 No such user - %s\r\n", rcpt_name) <= 0) {
             return -1;
         }
@@ -181,13 +191,14 @@ int do_data(smtp_state *ms) {
         return -1;
     }
 
-    // Create a temporary file for the Data text,
+    // Create a temporary file for the DATA text,
     char template[] = "./fileXXXXXX";
     int fd = mkstemp(template);
 
     size_t len;
 
-    // Parse Data lines, stopping when "<CRLF>." is reached
+    // Parse Data lines, writing to the temp file, stopping when "<CRLF>." is reached
+    // Remove '.', when present as first char
     while ((len = nb_read_line(ms->nb, ms->recvbuf)) >= 0) {
         if (memcmp(ms->recvbuf, ".\r\n", 3) == 0) {
             break;
@@ -226,6 +237,7 @@ int do_vrfy(smtp_state *ms) {
     dlog("Executing vrfy\n");
     // TODO: Implement this function
 
+    // Ensure that 2 words are present in the buffer
     if (ms->nwords == 2 &&
         strlen(ms->words[1]) >= 1) {
 
