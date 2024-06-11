@@ -28,7 +28,6 @@ typedef struct smtp_state {
     State state;
     struct utsname my_uname;
     // TODO: Add additional fields as necessary
-    char *sender_user;
     user_list_t ul;
 } smtp_state;
 
@@ -95,11 +94,8 @@ int do_helo(smtp_state *ms) {
 int do_rset(smtp_state *ms) {
     dlog("Executing rset\n");
     // TODO: Implement this function
-    free(ms->sender_user);
     user_list_destroy(ms->ul);
-    ms->sender_user = NULL;
     ms->ul = user_list_create();
-
     ms->state = Greeted;
 
     if (send_formatted(ms->fd, "250 %s\r\n", "State reset") <= 0) {
@@ -115,18 +111,20 @@ int do_mail(smtp_state *ms) {
     if (res != 0) {
         return res;
     }
-    if (ms->sender_user) {
-        free(ms->sender_user);
-    }
-    if (strlen(ms->words[1]) > 5) {
-        char *tmp = strdup(&ms->words[1][5]);
-        char *tmp_removed_brackets = trim_angle_brackets(tmp);
-        ms->sender_user = strdup(tmp_removed_brackets);
-        free(tmp);
+
+    if (ms->nwords == 2 &&
+        strlen(ms->words[1]) >= 8 &&
+        memcmp(ms->words[1], "FROM:<", 6) == 0 &&
+        ms->words[1][strlen(ms->words[1]) - 1] == '>') {
         ms->state = Receiver_Ready;
-        if (send_formatted(ms->fd, "250 Requested mail action ok, completed\r\n") > 0) {
-            return 0;
+        if (send_formatted(ms->fd, "250 Requested mail action ok, completed\r\n") <= 0) {
+            return -1;
         }
+        return 0;
+    }
+
+    if (send_formatted(ms->fd, "501 Invalid arguments for MAIL command\r\n") <= 0) {
+        return -1;
     }
     return 1;
 }
@@ -145,7 +143,10 @@ int do_rcpt(smtp_state *ms) {
         return res;
     }
 
-    if (strlen(ms->words[1]) > 3) {
+    if (ms->nwords == 2 &&
+        strlen(ms->words[1]) >= 6 &&
+        memcmp(ms->words[1], "TO:<", 4) == 0 &&
+        ms->words[1][strlen(ms->words[1]) - 1] == '>') {
         char *rcpt_name = &ms->words[1][3];
         rcpt_name = trim_angle_brackets(rcpt_name);
         if (is_valid_user(rcpt_name, NULL)) {
@@ -157,6 +158,10 @@ int do_rcpt(smtp_state *ms) {
             return 0;
         }
         if (send_formatted(ms->fd, "550 No such user - %s\r\n", rcpt_name) <= 0) {
+            return -1;
+        }
+    } else {
+        if (send_formatted(ms->fd, "501 Invalid arguments for RCPT command\r\n") <= 0) {
             return -1;
         }
     }
@@ -176,23 +181,30 @@ int do_data(smtp_state *ms) {
         return -1;
     }
 
+    // Create a temporary file for the Data text,
     char template[] = "./fileXXXXXX";
     int fd = mkstemp(template);
 
     size_t len;
 
+    // Parse Data lines, stopping when "<CRLF>." is reached
     while ((len = nb_read_line(ms->nb, ms->recvbuf)) >= 0) {
-        // if (ms->recvbuf[0] == '.' && ms->recvbuf[1] == '\n') {
-        //     break;
-        // }
-        if (memcmp(ms->recvbuf, ".", 1) == 0) {
+        if (memcmp(ms->recvbuf, ".\r\n", 3) == 0) {
             break;
         }
-        write(fd, ms->recvbuf, len);
+        if (memcmp(ms->recvbuf, ".", 1) == 0) {
+            write(fd, &ms->recvbuf[1], len - 1);
+        } else {
+            write(fd, ms->recvbuf, len);
+        }
     }
     close(fd);
 
+    // Copy contents of the temp file to the receivers mail directories
     save_user_mail(template, ms->ul);
+
+    // Finished with temp file, delete
+    remove(template);
 
     if (send_formatted(ms->fd, "250 %s\r\n", "Requested mail action ok, completed") <= 0) {
         return -1;
@@ -213,16 +225,24 @@ int do_noop(smtp_state *ms) {
 int do_vrfy(smtp_state *ms) {
     dlog("Executing vrfy\n");
     // TODO: Implement this function
-    if (is_valid_user(ms->words[1], NULL)) {
-        if (send_formatted(ms->fd, "250 User found - %s\r\n", ms->words[1]) <= 0) {
+
+    if (ms->nwords == 2 &&
+        strlen(ms->words[1]) >= 1) {
+
+        if (is_valid_user(ms->words[1], NULL)) {
+            if (send_formatted(ms->fd, "250 User found - %s\r\n", ms->words[1]) <= 0) {
+                return -1;
+            }
+        } else if (send_formatted(ms->fd, "550 No such user - %s\r\n", ms->words[1]) <= 0) {
             return -1;
         }
         return 0;
+    } else {
+        if (send_formatted(ms->fd, "501 Invalid arguments for VRFY command\r\n") <= 0) {
+            return -1;
+        }
     }
-    if (send_formatted(ms->fd, "550 No such user - %s\r\n", ms->words[1]) <= 0) {
-        return -1;
-    }
-    return 0;
+    return 1;
 }
 
 void handle_client(int fd) {
@@ -235,7 +255,6 @@ void handle_client(int fd) {
     ms->state = Undefined;
     uname(&ms->my_uname);
     // Initialization of student fields
-    ms->sender_user = NULL;
     ms->ul = user_list_create();
 
     if (send_formatted(fd, "220 %s Service ready\r\n", ms->my_uname.nodename) <= 0)
