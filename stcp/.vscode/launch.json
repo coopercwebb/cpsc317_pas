@@ -8,7 +8,7 @@
             "name": "C/C++: clang build and lldb debug active file",
             "type": "lldb",
             "request": "launch",
-            "preLaunchTask": "Run Shell Script", 
+            "preLaunchTask": "Build", 
             "program": "${workspaceFolder}/sender", // path to your programs exe and exe name
             "args": ["smallfile"], 
             "cwd": "${workspaceFolder}",

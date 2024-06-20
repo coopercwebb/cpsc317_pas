@@ -33,6 +33,7 @@ typedef struct {
     /* TODO: YOUR CODE HERE */
     int fd;
     int state;
+    unsigned int cur_seq_num;
 } stcp_send_ctrl_blk;
 /* ADD ANY EXTRA FUNCTIONS HERE */
 // TODO:
@@ -121,9 +122,9 @@ stcp_send_ctrl_blk *stcp_open(char *destination, int sendersPort,
     int fd = udp_open(destination, receiversPort, sendersPort);
     (void)fd;
     /* TODO: YOUR CODE HERE */
-    stcp_send_ctrl_blk ctrl_blk;
-    ctrl_blk.fd = fd;
-    ctrl_blk.state = STCP_SENDER_CLOSED;
+    stcp_send_ctrl_blk *ctrl_blk = malloc(sizeof(stcp_send_ctrl_blk));
+    ctrl_blk->fd = fd;
+    ctrl_blk->state = STCP_SENDER_CLOSED;
 
     // TODO: If fd is < 0 it has failed, error handling needed
 
@@ -144,9 +145,7 @@ stcp_send_ctrl_blk *stcp_open(char *destination, int sendersPort,
     htonHdr(constructed_packet.hdr);
 
     // checksum calculation
-    unsigned short checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
-
-    constructed_packet.hdr->checksum = checksum;
+    constructed_packet.hdr->checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
 
     send(fd, constructed_packet.data, constructed_packet.len, 0);
 
@@ -162,13 +161,13 @@ stcp_send_ctrl_blk *stcp_open(char *destination, int sendersPort,
 
     ntohHdr(receive_packet.hdr);
 
-    printf(tcpHdrToString(receive_packet.hdr));
+    if (!getSyn(receive_packet.hdr) || !getAck(receive_packet.hdr)) {
+        return NULL;
+    }
 
-    // printf("calculated checksum: %s \n", recv_checksum);
+    ctrl_blk->cur_seq_num = receive_packet.hdr->ackNo;
 
-    // printf("actual checksum: %s \n", receive_packet.hdr->checksum);
-
-    return &ctrl_blk;
+    return ctrl_blk;
 }
 
 /*
@@ -181,7 +180,44 @@ stcp_send_ctrl_blk *stcp_open(char *destination, int sendersPort,
  * Returns STCP_SUCCESS on success or STCP_ERROR on error.
  */
 int stcp_close(stcp_send_ctrl_blk *cb) {
-    /* YOUR CODE HERE */
+    /*TODO:  YOUR CODE HERE */
+
+    // Create segment; function call will initialize the packet
+    packet constructed_packet;
+
+    createSegment(&constructed_packet,
+                  FIN,
+                  STCP_MAXWIN,
+                  cb->cur_seq_num,
+                  0,
+                  NULL,
+                  0);
+
+    htonHdr(constructed_packet.hdr);
+
+    // checksum calculation
+    constructed_packet.hdr->checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
+
+    send(cb->fd, constructed_packet.data, constructed_packet.len, 0);
+
+    // char *buffer[STCP_MTU];
+    packet receive_packet;
+    initPacket(&receive_packet, receive_packet.data, sizeof(tcpheader));
+
+    // Implemented helper function for receiving packet.
+    readWithTimeout(cb->fd, receive_packet.data, STCP_MAX_TIMEOUT);
+
+    // Should be 0, if all good
+    unsigned short recv_checksum = ipchecksum(receive_packet.data, sizeof(tcpheader));
+
+    ntohHdr(receive_packet.hdr);
+
+    if (!getFin(receive_packet.hdr)) {
+        return STCP_ERROR;
+    }
+
+    free(cb);
+
     return STCP_SUCCESS;
 }
 /*
