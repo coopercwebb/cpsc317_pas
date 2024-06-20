@@ -60,13 +60,19 @@ int stcp_send(stcp_send_ctrl_blk *stcp_CB, unsigned char *data, int length) {
     // Create segment; function call will initialize the packet
     packet constructed_packet;
 
+    // Need to add buffer infront of the data, to account for the header
+    unsigned char buffered_data[sizeof(tcpheader) + length];
+
+    // Need to copy over data in front of space allocated for header
+    memcpy(&buffered_data[sizeof(tcpheader)], data, length);
+
     // ACK FLAG NEEDED FOR SENDING DATA?
     createSegment(&constructed_packet,
                   ACK,
                   STCP_MAXWIN,
                   stcp_CB->cur_seq_num,
                   0,
-                  data,
+                  buffered_data,
                   length);
 
     htonHdr(constructed_packet.hdr);

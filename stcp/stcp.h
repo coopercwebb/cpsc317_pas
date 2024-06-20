@@ -2,19 +2,18 @@
  * Version 1.0
  */
 
-
 #ifndef __STCP_H_
 #define __STCP_H_
 
-#include <string.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include "tcp.h"
 #include "log.h"
+#include "tcp.h"
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 
-#define STCP_MAXWIN    65535 
-#define STCP_MTU       300     /* MTU size */
-#define STCP_MSS       (STCP_MTU - sizeof(tcpheader)) /* MSS Size */
+#define STCP_MAXWIN 65535
+#define STCP_MTU 300                            /* MTU size */
+#define STCP_MSS (STCP_MTU - sizeof(tcpheader)) /* MSS Size */
 #define STCP_READ_TIMED_OUT (-3)
 #define STCP_READ_PERMANENT_FAILURE (-4)
 #define STCP_INITIAL_TIMEOUT 1000
@@ -51,13 +50,15 @@ static inline int payloadSize(packet *pkt) {
 static inline void initPacket(packet *pkt, unsigned char *data, int len) {
     pkt->len = len;
     pkt->hdr = (tcpheader *)pkt->data;
-    if (data != NULL) memcpy(pkt->data, data, len);
+    if (data != NULL) {
+        memcpy(pkt->data, data, len);
+    }
 }
 
 /* Declarations for STCP.C */
 
 extern void createSegment(packet *pkt, int flags, unsigned short rwnd, unsigned int seq, unsigned int ack, unsigned char *data, int len);
-extern void dump(char dir, void* pkt, int len);
+extern void dump(char dir, void *pkt, int len);
 extern unsigned int hostname_to_ipaddr(const char *s);
 extern int readWithTimeout(int fd, unsigned char *pkt, int ms);
 extern unsigned short ipchecksum(void *data, int len);
