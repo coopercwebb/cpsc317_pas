@@ -14,15 +14,14 @@
  *
  *************************************************************************/
 
-
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+#include <sys/file.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-#include <sys/file.h>
+#include <unistd.h>
 
 #include "stcp.h"
 
@@ -31,13 +30,12 @@
 
 typedef struct {
 
-
-    int DELETE_ME;     /* used only to make this compile */
-
-    /* YOUR CODE HERE */
-
+    /* TODO: YOUR CODE HERE */
+    int fd;
+    int state;
 } stcp_send_ctrl_blk;
 /* ADD ANY EXTRA FUNCTIONS HERE */
+// TODO:
 
 /*
  * Send STCP. This routine is to send all the data (len bytes).  If more
@@ -54,13 +52,51 @@ typedef struct {
  *
  * The function returns STCP_SUCCESS on success, or STCP_ERROR on error.
  */
-int stcp_send(stcp_send_ctrl_blk *stcp_CB, unsigned char* data, int length) {
+int stcp_send(stcp_send_ctrl_blk *stcp_CB, unsigned char *data, int length) {
 
-    /* YOUR CODE HERE */
+    /* TODO: YOUR CODE HERE */
+
+    // sequence must be randomly selected
+    // unsigned int seq_num = (unsigned int)rand();
+
+    // // Create segment; function call will initialize the packet
+    // packet constructed_packet;
+
+    // createSegment(&constructed_packet,
+    //               SYN,
+    //               STCP_MAXWIN,
+    //               seq_num,
+    //               0,
+    //               data,
+    //               length);
+
+    // htonHdr(constructed_packet.hdr);
+
+    // // checksum calculation
+    // unsigned short checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
+
+    // constructed_packet.hdr->checksum = checksum;
+
+    // send(stcp_CB->fd, constructed_packet.data, constructed_packet.len, 0);
+
+    // // char *buffer[STCP_MTU];
+    // packet receive_packet;
+
+    // // Implemented helper function for receiving packet.
+    // readWithTimeout(stcp_CB->fd, receive_packet.data, STCP_MAX_TIMEOUT);
+
+    // unsigned short recv_checksum = ipchecksum(receive_packet.data, 20);
+
+    // ntohHdr(receive_packet.hdr);
+
+    // printf(tcpHdrToString(receive_packet.hdr));
+
+    // // printf("calculated checksum: %s \n", recv_checksum);
+
+    // // printf("actual checksum: %s \n", receive_packet.hdr->checksum);
+
     return STCP_SUCCESS;
 }
-
-
 
 /*
  * Open the sender side of the STCP connection. Returns the pointer to
@@ -77,17 +113,63 @@ int stcp_send(stcp_send_ctrl_blk *stcp_CB, unsigned char* data, int length) {
  * very good for a pure request response protocol like DNS where there
  * is no long term relationship between the client and server.
  */
-stcp_send_ctrl_blk * stcp_open(char *destination, int sendersPort,
-                             int receiversPort) {
+stcp_send_ctrl_blk *stcp_open(char *destination, int sendersPort,
+                              int receiversPort) {
 
     logLog("init", "Sending from port %d to <%s, %d>", sendersPort, destination, receiversPort);
     // Since I am the sender, the destination and receiversPort name the other side
     int fd = udp_open(destination, receiversPort, sendersPort);
-    (void) fd;
-    /* YOUR CODE HERE */
-    return NULL;
-}
+    (void)fd;
+    /* TODO: YOUR CODE HERE */
+    stcp_send_ctrl_blk ctrl_blk;
+    ctrl_blk.fd = fd;
+    ctrl_blk.state = STCP_SENDER_CLOSED;
 
+    // TODO: If fd is < 0 it has failed, error handling needed
+
+    // sequence must be randomly selected
+    unsigned int seq_num = (unsigned int)rand();
+
+    // Create segment; function call will initialize the packet
+    packet constructed_packet;
+
+    createSegment(&constructed_packet,
+                  SYN,
+                  STCP_MAXWIN,
+                  seq_num,
+                  0,
+                  NULL,
+                  0);
+
+    htonHdr(constructed_packet.hdr);
+
+    // checksum calculation
+    unsigned short checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
+
+    constructed_packet.hdr->checksum = checksum;
+
+    send(fd, constructed_packet.data, constructed_packet.len, 0);
+
+    // char *buffer[STCP_MTU];
+    packet receive_packet;
+    initPacket(&receive_packet, receive_packet.data, sizeof(tcpheader));
+
+    // Implemented helper function for receiving packet.
+    readWithTimeout(fd, receive_packet.data, STCP_MAX_TIMEOUT);
+
+    // Should be 0, if all good
+    unsigned short recv_checksum = ipchecksum(receive_packet.data, sizeof(tcpheader));
+
+    ntohHdr(receive_packet.hdr);
+
+    printf(tcpHdrToString(receive_packet.hdr));
+
+    // printf("calculated checksum: %s \n", recv_checksum);
+
+    // printf("actual checksum: %s \n", receive_packet.hdr->checksum);
+
+    return &ctrl_blk;
+}
 
 /*
  * Make sure all the outstanding data has been transmitted and
@@ -126,7 +208,7 @@ int main(int argc, char **argv) {
     int receiversPort, sendersPort;
     char *filename = NULL;
     int file;
-    /* You might want to change the size of this buffer to test how your
+    /* TODO: You might want to change the size of this buffer to test how your
      * code deals with different packet sizes.
      */
     unsigned char buffer[STCP_MSS];
@@ -148,7 +230,8 @@ int main(int argc, char **argv) {
     destinationHost = argc > 1 ? argv[1] : "localhost";
     receiversPort = argc > 2 ? atoi(argv[2]) : getDefaultPort();
     sendersPort = argc > 3 ? atoi(argv[3]) : getDefaultPort() + 1;
-    if (argc > 4) filename = argv[4];
+    if (argc > 4)
+        filename = argv[4];
 
     /* Open file for transfer */
     file = open(filename, O_RDONLY);
@@ -163,7 +246,7 @@ int main(int argc, char **argv) {
      */
     cb = stcp_open(destinationHost, sendersPort, receiversPort);
     if (cb == NULL) {
-        /* YOUR CODE HERE */
+        /* TODO: YOUR CODE HERE */
     }
 
     /* Start to send data in file via STCP to remote receiver. Chop up
@@ -178,13 +261,13 @@ int main(int argc, char **argv) {
             break;
 
         if (stcp_send(cb, buffer, num_read_bytes) == STCP_ERROR) {
-            /* YOUR CODE HERE */
+            /* TODO: YOUR CODE HERE */
         }
     }
 
     /* Close the connection to remote receiver */
     if (stcp_close(cb) == STCP_ERROR) {
-        /* YOUR CODE HERE */
+        /* TODO: YOUR CODE HERE */
     }
 
     return 0;
