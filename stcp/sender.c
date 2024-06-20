@@ -57,44 +57,45 @@ int stcp_send(stcp_send_ctrl_blk *stcp_CB, unsigned char *data, int length) {
 
     /* TODO: YOUR CODE HERE */
 
-    // sequence must be randomly selected
-    // unsigned int seq_num = (unsigned int)rand();
+    // Create segment; function call will initialize the packet
+    packet constructed_packet;
 
-    // // Create segment; function call will initialize the packet
-    // packet constructed_packet;
+    // ACK FLAG NEEDED FOR SENDING DATA?
+    createSegment(&constructed_packet,
+                  ACK,
+                  STCP_MAXWIN,
+                  stcp_CB->cur_seq_num,
+                  0,
+                  data,
+                  length);
 
-    // createSegment(&constructed_packet,
-    //               SYN,
-    //               STCP_MAXWIN,
-    //               seq_num,
-    //               0,
-    //               data,
-    //               length);
+    htonHdr(constructed_packet.hdr);
 
-    // htonHdr(constructed_packet.hdr);
+    // checksum calculation
+    constructed_packet.hdr->checksum = ipchecksum(constructed_packet.hdr, constructed_packet.len);
 
-    // // checksum calculation
-    // unsigned short checksum = ipchecksum(constructed_packet.data, constructed_packet.len);
+    send(stcp_CB->fd, constructed_packet.data, constructed_packet.len, 0);
 
-    // constructed_packet.hdr->checksum = checksum;
+    packet receive_packet;
+    initPacket(&receive_packet, receive_packet.data, sizeof(tcpheader));
 
-    // send(stcp_CB->fd, constructed_packet.data, constructed_packet.len, 0);
+    // Implemented helper function for receiving packet.
+    int read_res = readWithTimeout(stcp_CB->fd, receive_packet.data, STCP_MAX_TIMEOUT);
 
-    // // char *buffer[STCP_MTU];
-    // packet receive_packet;
+    if (read_res == STCP_READ_TIMED_OUT || read_res == STCP_READ_PERMANENT_FAILURE) {
+        printf("TIME OUT");
+    }
 
-    // // Implemented helper function for receiving packet.
-    // readWithTimeout(stcp_CB->fd, receive_packet.data, STCP_MAX_TIMEOUT);
+    // Should be 0, if all good
+    unsigned short recv_checksum = ipchecksum(receive_packet.hdr, receive_packet.len);
 
-    // unsigned short recv_checksum = ipchecksum(receive_packet.data, 20);
+    ntohHdr(receive_packet.hdr);
 
-    // ntohHdr(receive_packet.hdr);
+    if (!getAck(receive_packet.hdr)) {
+        return STCP_ERROR;
+    }
 
-    // printf(tcpHdrToString(receive_packet.hdr));
-
-    // // printf("calculated checksum: %s \n", recv_checksum);
-
-    // // printf("actual checksum: %s \n", receive_packet.hdr->checksum);
+    stcp_CB->cur_seq_num = receive_packet.hdr->ackNo;
 
     return STCP_SUCCESS;
 }
